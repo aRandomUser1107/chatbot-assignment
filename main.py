@@ -16,8 +16,82 @@ with st.sidebar.expander("Advanced Settings", expanded=False):
 
 st.title("Chatbot")
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+st.sidebar.markdown("---")
+st.sidebar.subheader("Prompt Engineering")
+
+st.sidebar.markdown("#### Persona")
+system_prompt = st.sidebar.text_area(
+    label="",
+    placeholder="Example: You are a knowledgeable assistant who gives concise, helpful answers.",
+    height=100
+)
+
+st.sidebar.markdown("#### Tone")
+tone_choice = st.sidebar.selectbox(
+    "",
+    ["Default", "Formal", "Friendly", "Professional", "Humorous", "Empathetic", "Creative", "Concise"]
+)
+
+st.sidebar.markdown("#### Example Query")
+example_user_prompt = st.sidebar.text_area(
+    label="",
+    placeholder="Try writing a sample question to test the AI's tone...",
+    height=80
+)
+
+col1, col2 = st.sidebar.columns([1, 3])
+test_clicked = col2.button("Test Prompt", use_container_width=True)
+
+if test_clicked:
+    try:
+        tone_instruction = "" if tone_choice == "Default" else f"The assistant should respond in a {tone_choice.lower()} tone."
+        final_system_prompt = f"{system_prompt.strip()} {tone_instruction}".strip()
+
+        with st.spinner("Testing prompt..."):
+            if "Gemini" in model_choice:
+                genai.configure(api_key=gemini_key)
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                full_prompt = f"System: {final_system_prompt}\nUser: {example_user_prompt}"
+                response = model.generate_content(
+                    full_prompt,
+                    generation_config={
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "top_k": top_k,
+                        "max_output_tokens": max_output_tokens
+                    }
+                )
+                test_reply = response.text
+            else:
+                openai.api_type = "azure"
+                openai.api_key = azure_config["api_key"]
+                openai.api_base = azure_config["endpoint"]
+                openai.api_version = azure_config["api_version"]
+
+                response = openai.ChatCompletion.create(
+                    engine=azure_config["deployment_name"],
+                    messages=[
+                        {"role": "system", "content": final_system_prompt or "You are a helpful assistant."},
+                        {"role": "user", "content": example_user_prompt or "Hello!"}
+                    ],
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_tokens=max_output_tokens
+                )
+                test_reply = response["choices"][0]["message"]["content"]
+
+        with st.sidebar.expander("Model Response", expanded=True):
+            st.markdown(test_reply)
+
+    except Exception as e:
+        st.sidebar.error(f"Prompt test failed: {e}")
+
+tone_instruction = "" if tone_choice == "Default" else f"The assistant should respond in a {tone_choice.lower()} tone."
+final_system_prompt = f"{system_prompt.strip()} {tone_instruction}".strip()
+
+if "messages" not in st.session_state or st.session_state.get("applied_prompt") != final_system_prompt:
+    st.session_state.messages = [{"role": "system", "content": final_system_prompt or "You are a helpful assistant."}]
+    st.session_state.applied_prompt = final_system_prompt
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
